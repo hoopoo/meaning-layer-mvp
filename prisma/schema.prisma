@@ -1,0 +1,51 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model World {
+  id              String            @id @default(cuid())
+  title           String
+  sourceUrl       String
+  /// Ontology: WEB | BUD | ROBLOX | OTHER (strict literals)
+  sourceType      String            @default("WEB")
+  /// How entry is reached: DIRECT | APP_REQUIRED | UNKNOWN
+  accessMode      String            @default("UNKNOWN")
+  creatorName     String
+  whyExists       String
+  initialQuestion String
+  isUndecided     Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  meanings        WorldMeaningTag[]
+  interpretations Interpretation[]
+}
+
+model MeaningTag {
+  id     String            @id @default(cuid())
+  name   String            @unique
+  worlds WorldMeaningTag[]
+}
+
+model WorldMeaningTag {
+  worldId String
+  tagId   String
+
+  world World      @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  tag   MeaningTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([worldId, tagId])
+}
+
+model Interpretation {
+  id         String   @id @default(cuid())
+  worldId    String
+  authorName String
+  body       String
+  createdAt  DateTime @default(now())
+
+  world World @relation(fields: [worldId], references: [id], onDelete: Cascade)
+}
