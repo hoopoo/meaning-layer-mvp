@@ -13,7 +13,8 @@
     "lint": "eslint",
     "postinstall": "node scripts/postinstall-prisma.mjs",
     "db:push": "prisma db push",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "worlds:import": "tsx scripts/import-roblox-worlds.mts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

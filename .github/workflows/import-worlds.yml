@@ -1,0 +1,47 @@
+name: Import Roblox worlds
+
+# Grows the registry on a schedule by ingesting popular Roblox experiences.
+# Runs the same CLI as `npm run worlds:import`. Idempotent: only new worlds
+# (deduped by placeId) are added, so re-running keeps the registry growing
+# without duplicates. Imported worlds are left "Undecided" for humans to interpret.
+
+on:
+  schedule:
+    # Daily at 00:00 UTC (09:00 JST)
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      sort:
+        description: "Roblox sort (top-trending | up-and-coming | top-playing-now | fun-with-friends | top-revisited)"
+        required: false
+        default: "up-and-coming"
+      limit:
+        description: "How many new worlds to import"
+        required: false
+        default: "10"
+
+# Avoid overlapping runs writing to the same DB.
+concurrency:
+  group: import-worlds
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Import worlds
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SORT: ${{ github.event.inputs.sort || 'up-and-coming' }}
+          LIMIT: ${{ github.event.inputs.limit || '10' }}
+        run: npm run worlds:import
