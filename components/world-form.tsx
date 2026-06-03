@@ -34,8 +34,20 @@ const ACCESS_OPTIONS: { value: AccessMode; label: string }[] = [
   { value: "APP_REQUIRED", label: "App required" },
 ];
 
-export function WorldForm({ tags, initial }: { tags: TagOption[]; initial?: WorldFormInitial }) {
-  const [state, formAction, pending] = useActionState(createWorld, initialState);
+export function WorldForm({
+  tags,
+  initial,
+  action,
+  submitLabel,
+  pendingLabel,
+}: {
+  tags: TagOption[];
+  initial?: WorldFormInitial;
+  action?: (prev: ActionState, formData: FormData) => Promise<ActionState>;
+  submitLabel?: string;
+  pendingLabel?: string;
+}) {
+  const [state, formAction, pending] = useActionState(action ?? createWorld, initialState);
   const [urlProbeHint, setUrlProbeHint] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<SourceType>(parseSourceType(initial?.sourceType ?? "WEB"));
   const [accessMode, setAccessMode] = useState<AccessMode>(parseAccessMode(initial?.accessMode ?? "UNKNOWN"));
@@ -269,7 +281,7 @@ export function WorldForm({ tags, initial }: { tags: TagOption[]; initial?: Worl
           disabled={pending}
           className="rounded-xl bg-stone-900 px-5 py-2.5 text-sm font-medium text-stone-50 transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-200"
         >
-          {pending ? "Recording…" : "Record world"}
+          {pending ? (pendingLabel ?? "Recording…") : (submitLabel ?? "Record world")}
         </button>
       </div>
     </form>

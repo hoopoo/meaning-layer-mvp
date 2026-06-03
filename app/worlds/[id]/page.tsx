@@ -65,12 +65,20 @@ export default async function WorldDetailPage({ params }: PageProps) {
     <div className="min-h-screen bg-stone-100/60 dark:bg-stone-950">
       <SiteHeader
         action={
-          <Link
-            href="/"
-            className="text-sm font-medium text-stone-600 underline-offset-4 hover:text-stone-900 hover:underline dark:text-stone-400 dark:hover:text-stone-100"
-          >
-            Back to registry
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href={`/worlds/${world.id}/edit`}
+              className="text-sm font-medium text-stone-600 underline-offset-4 hover:text-stone-900 hover:underline dark:text-stone-400 dark:hover:text-stone-100"
+            >
+              {world.isUndecided ? "Declare meaning" : "Edit world"}
+            </Link>
+            <Link
+              href="/"
+              className="text-sm font-medium text-stone-600 underline-offset-4 hover:text-stone-900 hover:underline dark:text-stone-400 dark:hover:text-stone-100"
+            >
+              Back to registry
+            </Link>
+          </div>
         }
       />
 
