@@ -1,15 +1,57 @@
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
-import { WorldForm } from "@/components/world-form";
+import { WorldForm, type WorldFormInitial } from "@/components/world-form";
 import prisma from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewWorldPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function first(value: string | string[] | undefined): string | undefined {
+  const v = Array.isArray(value) ? value[0] : value;
+  const t = v?.trim();
+  return t ? t : undefined;
+}
+
+export default async function NewWorldPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   const tags = await prisma.meaningTag.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
+
+  const tagNames = (first(sp.tags) ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const tagIds = tags.filter((t) => tagNames.includes(t.name)).map((t) => t.id);
+
+  const initial: WorldFormInitial = {
+    title: first(sp.title),
+    whyExists: first(sp.whyExists),
+    initialQuestion: first(sp.initialQuestion),
+    sourceType: first(sp.sourceType),
+    accessMode: first(sp.accessMode),
+    sourceUrl: first(sp.sourceUrl),
+    creatorName: first(sp.creatorName),
+    isUndecided: first(sp.isUndecided) === "1",
+    tagIds,
+  };
+
+  const isPrefilled =
+    Boolean(
+      initial.title ||
+        initial.whyExists ||
+        initial.initialQuestion ||
+        initial.sourceUrl ||
+        initial.creatorName,
+    ) ||
+    tagIds.length > 0 ||
+    initial.isUndecided === true;
 
   return (
     <div className="min-h-screen bg-stone-100/60 dark:bg-stone-950">
@@ -46,7 +88,14 @@ export default async function NewWorldPage() {
               <span className="block">A world can be played.</span>
               <span className="block">Here, it is first defined.</span>
             </p>
-            <WorldForm tags={tags} />
+            {isPrefilled ? (
+              <p className="mb-8 max-w-2xl rounded-xl border border-stone-200/80 bg-white/60 px-4 py-3 text-xs leading-relaxed text-stone-600 dark:border-stone-800 dark:bg-stone-950/60 dark:text-stone-400">
+                Pre-filled from an existing world. Refine its meaning—especially{" "}
+                <span className="font-medium">why it exists</span> and its{" "}
+                <span className="font-medium">initial question</span>—then record it.
+              </p>
+            ) : null}
+            <WorldForm tags={tags} initial={initial} />
           </>
         )}
       </main>

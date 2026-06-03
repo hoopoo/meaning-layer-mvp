@@ -16,14 +16,17 @@ import { WorldSourceAction } from "@/components/world-source-action";
 import { interpretationsCountPhrase } from "@/lib/interpretations-label";
 import { parseSourceType } from "@/lib/source-reference";
 import { linePreview, whyExistsPreview } from "@/lib/why-preview";
+import { buildRegisterPrefillHref } from "@/lib/world-prefill";
 
 export type WorldCardWorld = {
   id: string;
   title: string;
   creatorName: string;
   whyExists: string;
+  initialQuestion: string;
   sourceUrl: string;
   sourceType: string;
+  accessMode: string;
   isUndecided: boolean;
   createdAt: Date;
   meanings: { tag: { name: string } }[];
@@ -57,6 +60,7 @@ export function WorldCard({ world }: { world: WorldCardWorld }) {
     : null;
   const decisionPosture = computeDecisionPosture(totalInterpretations, divergenceLevel);
   const sourceType = parseSourceType(world.sourceType);
+  const registerHref = buildRegisterPrefillHref(world);
 
   return (
     <article className="group rounded-2xl border border-stone-200/90 bg-white p-6 shadow-sm transition hover:border-stone-300 dark:border-stone-800 dark:bg-stone-950 dark:hover:border-stone-700">
@@ -175,6 +179,15 @@ export function WorldCard({ world }: { world: WorldCardWorld }) {
           <dd className="mt-1.5 tabular-nums">{formatArchiveDate(world.createdAt)}</dd>
         </div>
       </dl>
+
+      <div className="mt-5 flex justify-end">
+        <Link
+          href={registerHref}
+          className="inline-flex w-fit items-center rounded-lg border border-stone-300/90 bg-transparent px-3 py-1.5 text-xs font-medium text-stone-600 transition hover:border-stone-400 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-400 dark:hover:border-stone-500 dark:hover:bg-stone-900/80"
+        >
+          Register a world
+        </Link>
+      </div>
     </article>
   );
 }

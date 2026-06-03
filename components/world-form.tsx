@@ -7,6 +7,18 @@ import { isValidExternalWorldUrl, safeExternalWorldHref } from "@/lib/source-url
 
 type TagOption = { id: string; name: string };
 
+export type WorldFormInitial = {
+  title?: string;
+  whyExists?: string;
+  initialQuestion?: string;
+  sourceType?: string;
+  accessMode?: string;
+  sourceUrl?: string;
+  creatorName?: string;
+  isUndecided?: boolean;
+  tagIds?: string[];
+};
+
 const initialState: ActionState = null;
 
 const SOURCE_OPTIONS: { value: SourceType; label: string }[] = [
@@ -22,13 +34,14 @@ const ACCESS_OPTIONS: { value: AccessMode; label: string }[] = [
   { value: "APP_REQUIRED", label: "App required" },
 ];
 
-export function WorldForm({ tags }: { tags: TagOption[] }) {
+export function WorldForm({ tags, initial }: { tags: TagOption[]; initial?: WorldFormInitial }) {
   const [state, formAction, pending] = useActionState(createWorld, initialState);
   const [urlProbeHint, setUrlProbeHint] = useState<string | null>(null);
-  const [sourceType, setSourceType] = useState<SourceType>("WEB");
-  const [accessMode, setAccessMode] = useState<AccessMode>("UNKNOWN");
+  const [sourceType, setSourceType] = useState<SourceType>(parseSourceType(initial?.sourceType ?? "WEB"));
+  const [accessMode, setAccessMode] = useState<AccessMode>(parseAccessMode(initial?.accessMode ?? "UNKNOWN"));
 
   const field = state?.fieldErrors;
+  const selectedTagIds = new Set(initial?.tagIds ?? []);
 
   const onSourceUrlBlur = useCallback(
     async (raw: string, type: SourceType) => {
@@ -72,6 +85,7 @@ export function WorldForm({ tags }: { tags: TagOption[] }) {
           name="whyExists"
           required
           rows={5}
+          defaultValue={initial?.whyExists}
           className="w-full resize-y rounded-xl border border-stone-200 bg-white px-4 py-3 text-stone-900 outline-none ring-stone-400/30 placeholder:text-stone-400 focus:ring-2 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:placeholder:text-stone-600"
           placeholder="What made this world necessary to exist?"
         />
@@ -95,6 +109,7 @@ export function WorldForm({ tags }: { tags: TagOption[] }) {
           name="initialQuestion"
           required
           rows={4}
+          defaultValue={initial?.initialQuestion}
           className="w-full resize-y rounded-xl border border-stone-200 bg-white px-4 py-3 text-stone-900 outline-none ring-stone-400/30 placeholder:text-stone-400 focus:ring-2 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:placeholder:text-stone-600"
           placeholder="What question does this world leave unanswered?"
         />
@@ -112,6 +127,7 @@ export function WorldForm({ tags }: { tags: TagOption[] }) {
           name="title"
           required
           autoComplete="off"
+          defaultValue={initial?.title}
           className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-stone-900 outline-none ring-stone-400/30 placeholder:text-stone-400 focus:ring-2 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:placeholder:text-stone-600"
           placeholder="How this world is called"
         />
@@ -175,6 +191,7 @@ export function WorldForm({ tags }: { tags: TagOption[] }) {
           type="text"
           required
           autoComplete="off"
+          defaultValue={initial?.sourceUrl}
           className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-stone-900 outline-none ring-stone-400/30 placeholder:text-stone-400 focus:ring-2 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:placeholder:text-stone-600"
           placeholder={
             sourceType === "WEB"
@@ -200,6 +217,7 @@ export function WorldForm({ tags }: { tags: TagOption[] }) {
           name="creatorName"
           required
           autoComplete="name"
+          defaultValue={initial?.creatorName}
           className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-stone-900 outline-none ring-stone-400/30 placeholder:text-stone-400 focus:ring-2 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:placeholder:text-stone-600"
           placeholder="How you wish to be cited"
         />
@@ -221,6 +239,7 @@ export function WorldForm({ tags }: { tags: TagOption[] }) {
                 type="checkbox"
                 name="tagIds"
                 value={t.id}
+                defaultChecked={selectedTagIds.has(t.id)}
                 className="mt-1 size-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500 dark:border-stone-600 dark:bg-stone-900"
               />
               <span className="leading-snug">{t.name}</span>
@@ -236,6 +255,7 @@ export function WorldForm({ tags }: { tags: TagOption[] }) {
         <input
           type="checkbox"
           name="isUndecided"
+          defaultChecked={initial?.isUndecided}
           className="size-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500 dark:border-stone-600 dark:bg-stone-900"
         />
         <span>
