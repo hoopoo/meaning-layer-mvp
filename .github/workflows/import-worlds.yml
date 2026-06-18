@@ -4,6 +4,8 @@ name: Import Roblox worlds
 # Runs the same CLI as `npm run worlds:import`. Idempotent: only new worlds
 # (deduped by placeId) are added, so re-running keeps the registry growing
 # without duplicates. Imported worlds are left "Undecided" for humans to interpret.
+# When the primary sort is exhausted, the importer falls back to other Roblox
+# discovery sorts (top-trending, top-playing-now, etc.) until LIMIT is reached.
 
 on:
   schedule:
@@ -12,9 +14,13 @@ on:
   workflow_dispatch:
     inputs:
       sort:
-        description: "Roblox sort (top-trending | up-and-coming | top-playing-now | fun-with-friends | top-revisited)"
+        description: "Primary Roblox sort (fallback sorts are tried automatically if this feed is exhausted)"
         required: false
         default: "up-and-coming"
+      fallback_sorts:
+        description: "Comma-separated fallback sorts, or 'none' to use only the primary sort"
+        required: false
+        default: "top-trending,top-playing-now,fun-with-friends,top-revisited"
       limit:
         description: "How many new worlds to import"
         required: false
@@ -43,5 +49,6 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SORT: ${{ github.event.inputs.sort || 'up-and-coming' }}
+          FALLBACK_SORTS: ${{ github.event.inputs.fallback_sorts || 'top-trending,top-playing-now,fun-with-friends,top-revisited' }}
           LIMIT: ${{ github.event.inputs.limit || '10' }}
         run: npm run worlds:import
