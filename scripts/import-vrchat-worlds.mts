@@ -112,6 +112,37 @@ function normalizeAuthCookie(raw: string): string {
   return trimmed;
 }
 
+function assertAuthCookieShape(cookie: string): void {
+  if (cookie.length < 20) {
+    throw new Error(
+      "VRCHAT_AUTH_COOKIE looks too short. Copy the full Value of the auth cookie from vrchat.com — not your username.",
+    );
+  }
+  if (!cookie.startsWith("authcookie_")) {
+    console.warn(
+      "Warning: VRChat auth cookies usually start with authcookie_. Make sure you copied the auth row Value from Cookies, not your username.",
+    );
+  }
+}
+
+async function verifyAuthCookie(authCookie: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/user`, {
+    headers: {
+      Cookie: `auth=${authCookie}`,
+      "User-Agent": UA,
+      Accept: "application/json",
+    },
+  });
+  if (res.status === 401) {
+    throw new Error(
+      "VRCHAT_AUTH_COOKIE is invalid or expired. Log in at vrchat.com, copy a fresh auth cookie (Safari → ストレージ → Cookies → auth), and update the GitHub secret.",
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`VRChat auth check failed: HTTP ${res.status}`);
+  }
+}
+
 function hasCredential(value: string | undefined): boolean {
   return Boolean(value?.trim());
 }
@@ -119,7 +150,9 @@ function hasCredential(value: string | undefined): boolean {
 async function resolveAuthCookie(): Promise<string> {
   const presetRaw = process.env.VRCHAT_AUTH_COOKIE;
   if (hasCredential(presetRaw)) {
-    return normalizeAuthCookie(presetRaw!);
+    const cookie = normalizeAuthCookie(presetRaw!);
+    assertAuthCookieShape(cookie);
+    return cookie;
   }
 
   const username = process.env.VRCHAT_USERNAME?.trim();
@@ -248,16 +281,21 @@ async function collectCandidates(
 ): Promise<Candidate[]> {
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
+  let unauthorizedFeeds = 0;
+  let feedsChecked = 0;
 
   for (const feed of feeds) {
     if (candidates.length >= limit) break;
+    feedsChecked++;
 
     let worlds: VrchatWorld[];
     try {
       const data = await vrchatGet(feed.path, authCookie, feed.params);
       worlds = Array.isArray(data) ? data : [];
     } catch (err) {
-      console.log(`Feed '${feed.feedId}' failed: ${err instanceof Error ? err.message : err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`Feed '${feed.feedId}' failed: ${message}`);
+      if (message.includes("HTTP 401")) unauthorizedFeeds++;
       continue;
     }
 
@@ -278,6 +316,12 @@ async function collectCandidates(
     console.log(`Feed '${feed.feedId}': ${addedFromFeed} new candidate(s).`);
   }
 
+  if (candidates.length === 0 && unauthorizedFeeds > 0 && unauthorizedFeeds === feedsChecked) {
+    throw new Error(
+      "All VRChat discovery feeds returned HTTP 401. Refresh VRCHAT_AUTH_COOKIE from a logged-in vrchat.com session and update the GitHub secret.",
+    );
+  }
+
   return candidates;
 }
 
@@ -289,6 +333,7 @@ async function main() {
   );
 
   const authCookie = await resolveAuthCookie();
+  await verifyAuthCookie(authCookie);
 
   const existing = await prisma.world.findMany({
     where: { sourceType: "VRCHAT" },
