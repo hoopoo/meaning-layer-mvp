@@ -1,7 +1,7 @@
 import { safeExternalWorldHref } from "@/lib/source-url";
 
 /** Canonical ontology values (persisted uppercase in DB). */
-export const SOURCE_TYPES = ["WEB", "BUD", "ROBLOX", "OTHER"] as const;
+export const SOURCE_TYPES = ["WEB", "BUD", "ROBLOX", "VRCHAT", "OTHER"] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
 export const ACCESS_MODES = ["DIRECT", "APP_REQUIRED", "UNKNOWN"] as const;
@@ -61,6 +61,7 @@ export function sourceActionLabel(sourceType: SourceType): string {
     WEB: "Open link",
     BUD: "Open in BUD",
     ROBLOX: "Open in Roblox",
+    VRCHAT: "Open in VRChat",
     OTHER: "View reference",
   };
   return m[sourceType];

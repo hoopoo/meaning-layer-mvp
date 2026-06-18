@@ -25,6 +25,7 @@ const SOURCE_OPTIONS: { value: SourceType; label: string }[] = [
   { value: "WEB", label: "Web (http / https)" },
   { value: "BUD", label: "BUD" },
   { value: "ROBLOX", label: "Roblox" },
+  { value: "VRCHAT", label: "VRChat" },
   { value: "OTHER", label: "Other (non-web)" },
 ];
 

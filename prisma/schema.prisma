@@ -11,7 +11,7 @@ model World {
   id              String            @id @default(cuid())
   title           String
   sourceUrl       String
-  /// Ontology: WEB | BUD | ROBLOX | OTHER (strict literals)
+  /// Ontology: WEB | BUD | ROBLOX | VRCHAT | OTHER (strict literals)
   sourceType      String            @default("WEB")
   /// How entry is reached: DIRECT | APP_REQUIRED | UNKNOWN
   accessMode      String            @default("UNKNOWN")

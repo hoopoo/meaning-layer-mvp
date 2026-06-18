@@ -1,0 +1,54 @@
+name: Import VRChat worlds
+
+# Grows the registry by ingesting popular VRChat worlds via the Web API.
+# Runs the same CLI as `npm run worlds:import:vrchat`. Idempotent: only new
+# worlds (deduped by wrld_* id) are added. Requires VRChat auth secrets.
+# When the primary sort is exhausted, fallback sorts are tried automatically.
+
+on:
+  schedule:
+    # Daily at 00:30 UTC (09:30 JST), after the Roblox import
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    inputs:
+      sort:
+        description: "Primary VRChat sort (popularity | heat | created | updated)"
+        required: false
+        default: "popularity"
+      fallback_sorts:
+        description: "Comma-separated fallback sorts, or 'none' for primary only"
+        required: false
+        default: "heat,created,updated"
+      limit:
+        description: "How many new worlds to import"
+        required: false
+        default: "10"
+
+concurrency:
+  group: import-worlds
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Import VRChat worlds
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VRCHAT_AUTH_COOKIE: ${{ secrets.VRCHAT_AUTH_COOKIE }}
+          VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
+          VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+          SORT: ${{ github.event.inputs.sort || 'popularity' }}
+          FALLBACK_SORTS: ${{ github.event.inputs.fallback_sorts || 'heat,created,updated' }}
+          LIMIT: ${{ github.event.inputs.limit || '10' }}
+        run: npm run worlds:import:vrchat
