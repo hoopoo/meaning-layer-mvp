@@ -104,38 +104,87 @@ function extractAuthCookie(res: Response): string | null {
   return null;
 }
 
+function normalizeAuthCookie(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.toLowerCase().startsWith("auth=")) {
+    return trimmed.slice(5).trim();
+  }
+  return trimmed;
+}
+
+function hasCredential(value: string | undefined): boolean {
+  return Boolean(value?.trim());
+}
+
 async function resolveAuthCookie(): Promise<string> {
-  const preset = process.env.VRCHAT_AUTH_COOKIE?.trim();
-  if (preset) return preset;
+  const presetRaw = process.env.VRCHAT_AUTH_COOKIE;
+  if (hasCredential(presetRaw)) {
+    return normalizeAuthCookie(presetRaw!);
+  }
 
   const username = process.env.VRCHAT_USERNAME?.trim();
   const password = process.env.VRCHAT_PASSWORD;
-  if (!username || !password) {
+  const hasUser = hasCredential(username);
+  const hasPass = hasCredential(password);
+
+  if (!hasUser && !hasPass) {
     throw new Error(
-      "VRChat API requires auth. Set VRCHAT_AUTH_COOKIE or VRCHAT_USERNAME + VRCHAT_PASSWORD.",
+      "VRChat API requires auth. Add GitHub Actions secrets: VRCHAT_AUTH_COOKIE (recommended) or VRCHAT_USERNAME + VRCHAT_PASSWORD.",
+    );
+  }
+  if (!hasUser || !hasPass) {
+    throw new Error(
+      "VRChat username/password pair is incomplete. Set both VRCHAT_USERNAME and VRCHAT_PASSWORD, or use VRCHAT_AUTH_COOKIE only.",
     );
   }
 
   const res = await fetch(`${API_BASE}/auth/user`, {
     headers: {
-      Authorization: `Basic ${basicAuthToken(username, password)}`,
+      Authorization: `Basic ${basicAuthToken(username!, password!)}`,
       "User-Agent": UA,
       Accept: "application/json",
     },
   });
 
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = null;
+  }
+
   if (res.status === 401) {
+    const detail =
+      body?.error &&
+      typeof body.error === "object" &&
+      "message" in body.error &&
+      typeof (body.error as { message?: unknown }).message === "string"
+        ? (body.error as { message: string }).message
+        : "invalid credentials";
     throw new Error(
-      "VRChat login failed (401). If the account uses 2FA, set VRCHAT_AUTH_COOKIE from a logged-in browser session instead.",
+      `VRChat login failed (401: ${detail}). Use your VRChat username (not email) and password, or set VRCHAT_AUTH_COOKIE from a logged-in browser session.`,
     );
   }
   if (!res.ok) {
     throw new Error(`VRChat login HTTP ${res.status}`);
   }
 
+  if (body?.requiresTwoFactorAuth === true) {
+    throw new Error(
+      "VRChat account requires 2FA. Log in at vrchat.com, copy the auth cookie (DevTools → Application → Cookies → auth), and set VRCHAT_AUTH_COOKIE.",
+    );
+  }
+  if (body?.emailVerified === false) {
+    throw new Error(
+      "VRChat email is not verified yet. Verify the account email at vrchat.com, then retry.",
+    );
+  }
+
   const cookie = extractAuthCookie(res);
   if (!cookie) {
-    throw new Error("VRChat login succeeded but no auth cookie was returned.");
+    throw new Error(
+      "VRChat login succeeded but no auth cookie was returned. Set VRCHAT_AUTH_COOKIE manually from a logged-in browser session.",
+    );
   }
   return cookie;
 }
