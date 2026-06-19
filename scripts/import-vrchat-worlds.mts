@@ -51,6 +51,7 @@ const prisma = new PrismaClient();
  */
 
 const API_BASE = "https://api.vrchat.cloud/api/1";
+let cachedClientApiKey: string | null = null;
 const KNOWN_SORTS = ["popularity", "heat", "created", "updated"] as const;
 const SORT = process.env.SORT ?? "popularity";
 const LIMIT = Math.max(1, Number(process.env.LIMIT ?? "10") || 10);
@@ -127,12 +128,55 @@ function normalizeTwoFactorAuthCookie(raw: string): string {
   return trimmed;
 }
 
-function buildCookieHeader(authCookie: string, twoFactorAuthCookie?: string): string {
-  const parts = [`auth=${authCookie}`];
+function buildCookieHeader(
+  authCookie: string,
+  twoFactorAuthCookie?: string,
+  clientApiKey?: string,
+): string {
+  const parts: string[] = [];
+  if (clientApiKey) parts.push(`apiKey=${clientApiKey}`);
+  parts.push(`auth=${authCookie}`);
   if (twoFactorAuthCookie) {
     parts.push(`twoFactorAuth=${normalizeTwoFactorAuthCookie(twoFactorAuthCookie)}`);
   }
   return parts.join("; ");
+}
+
+async function getClientApiKey(): Promise<string> {
+  const fromEnv = process.env.VRCHAT_CLIENT_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  if (cachedClientApiKey) return cachedClientApiKey;
+
+  const res = await fetch(`${API_BASE}/config`, {
+    headers: {
+      "User-Agent": UA,
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`VRChat config fetch failed: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { clientApiKey?: string };
+  const key = data.clientApiKey?.trim();
+  if (!key) {
+    throw new Error("VRChat /config did not return clientApiKey.");
+  }
+  cachedClientApiKey = key;
+  return key;
+}
+
+async function buildAuthHeaders(
+  authCookie: string,
+  twoFactorAuthCookie?: string,
+  extra: Record<string, string> = {},
+): Promise<Record<string, string>> {
+  const clientApiKey = await getClientApiKey();
+  return {
+    Cookie: buildCookieHeader(authCookie, twoFactorAuthCookie, clientApiKey),
+    "User-Agent": UA,
+    Accept: "application/json",
+    ...extra,
+  };
 }
 
 function base32Decode(input: string): Buffer {
@@ -183,37 +227,148 @@ function assertAuthCookieShape(cookie: string): void {
 }
 
 async function verifyAuthCookie(authCookie: string, twoFactorAuthCookie?: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/auth/user`, {
-    headers: {
-      Cookie: buildCookieHeader(authCookie, twoFactorAuthCookie),
-      "User-Agent": UA,
-      Accept: "application/json",
-    },
-  });
-  if (res.status === 401) {
-    throw new Error(
-      "VRChat auth cookie is invalid or expired. For CI, set VRCHAT_USERNAME + VRCHAT_PASSWORD (+ VRCHAT_2FA_SECRET if 2FA is enabled).",
-    );
-  }
-  if (!res.ok) {
-    throw new Error(`VRChat auth check failed: HTTP ${res.status}`);
-  }
+  await vrchatGet(
+    "/worlds",
+    authCookie,
+    { n: "1", sort: "popularity", order: "descending", releaseStatus: "public" },
+    twoFactorAuthCookie,
+  );
 }
 
 function hasCredential(value: string | undefined): boolean {
   return Boolean(value?.trim());
 }
 
-async function loginWithCredentials(username: string, password: string): Promise<string> {
+function errorMessageFromBody(body: Record<string, unknown> | null, fallback: string): string {
+  if (
+    body?.error &&
+    typeof body.error === "object" &&
+    "message" in body.error &&
+    typeof (body.error as { message?: unknown }).message === "string"
+  ) {
+    return (body.error as { message: string }).message;
+  }
+  return fallback;
+}
+
+function isNewLocationLoginError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("somewhere new") || lower.includes("logging in from");
+}
+
+function requiresTwoFactorMethods(body: Record<string, unknown> | null): string[] {
+  const raw = body?.requiresTwoFactorAuth;
+  if (Array.isArray(raw)) {
+    return raw.filter((value): value is string => typeof value === "string");
+  }
+  if (raw === true) return ["totp"];
+  return [];
+}
+
+async function verifyLoginPlaceToken(token: string): Promise<void> {
+  const url = new URL(`${API_BASE}/auth/verifyLoginPlace`);
+  url.searchParams.set("token", token);
+  const res = await fetch(url, {
+    headers: { "User-Agent": UA },
+    redirect: "manual",
+  });
+  if (res.status === 302 || res.ok) return;
+  throw new Error(`VRChat login-place verification failed: HTTP ${res.status}`);
+}
+
+async function verifyEmailOtp(authCookie: string, code: string, twoFactorAuthCookie?: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/auth/twofactorauth/emailotp/verify`, {
+    method: "POST",
+    headers: await buildAuthHeaders(authCookie, twoFactorAuthCookie, {
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({ code }),
+  });
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!res.ok) {
+    throw new Error(
+      `VRChat email verification failed (${errorMessageFromBody(body, `HTTP ${res.status}`)}).`,
+    );
+  }
+  return extractAuthCookie(res) ?? authCookie;
+}
+
+async function verifyTotp(
+  authCookie: string,
+  totpSecret: string,
+  twoFactorAuthCookie?: string,
+): Promise<string> {
+  const res = await fetch(`${API_BASE}/auth/twofactorauth/totp/verify`, {
+    method: "POST",
+    headers: await buildAuthHeaders(authCookie, twoFactorAuthCookie, {
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({ code: generateTotp(totpSecret) }),
+  });
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!res.ok) {
+    throw new Error(
+      `VRChat 2FA verification failed (${errorMessageFromBody(body, `HTTP ${res.status}`)}). Check VRCHAT_2FA_SECRET.`,
+    );
+  }
+  return extractAuthCookie(res) ?? authCookie;
+}
+
+async function completeTwoFactorLogin(
+  body: Record<string, unknown>,
+  authCookie: string,
+  rememberedTwoFactor?: string | null,
+): Promise<string> {
+  const methods = requiresTwoFactorMethods(body);
+  if (methods.length === 0) return authCookie;
+
   const twoFactorAuthCookie = process.env.VRCHAT_TWO_FACTOR_AUTH_COOKIE?.trim();
+  const cookieFor2fa = twoFactorAuthCookie ?? rememberedTwoFactor ?? undefined;
+
+  if (methods.includes("totp")) {
+    const totpSecret = totpSecretFromEnv();
+    if (!hasCredential(totpSecret)) {
+      throw new Error(
+        "VRChat account requires TOTP 2FA. Set GitHub secret VRCHAT_2FA_SECRET to the manual-entry key from your authenticator app setup.",
+      );
+    }
+    return verifyTotp(authCookie, totpSecret!, cookieFor2fa);
+  }
+
+  if (methods.includes("emailOtp")) {
+    const emailOtp = process.env.VRCHAT_EMAIL_OTP?.trim();
+    if (!hasCredential(emailOtp)) {
+      throw new Error(
+        "VRChat sent an email verification code. Check your inbox, then set GitHub secret VRCHAT_EMAIL_OTP to the code and re-run immediately (codes expire quickly). For daily automation, enable TOTP 2FA and set VRCHAT_2FA_SECRET instead.",
+      );
+    }
+    return verifyEmailOtp(authCookie, emailOtp!, cookieFor2fa);
+  }
+
+  throw new Error(
+    `VRChat requires additional verification (${methods.join(", ")}). Enable TOTP 2FA on the account and set VRCHAT_2FA_SECRET for CI.`,
+  );
+}
+
+async function loginWithCredentials(username: string, password: string): Promise<string> {
+  const loginPlaceToken = process.env.VRCHAT_LOGIN_PLACE_TOKEN?.trim();
+  if (hasCredential(loginPlaceToken)) {
+    console.log("Verifying VRChat login place token before login...");
+    await verifyLoginPlaceToken(loginPlaceToken!);
+  }
+
+  const twoFactorAuthCookie = process.env.VRCHAT_TWO_FACTOR_AUTH_COOKIE?.trim();
+  const clientApiKey = await getClientApiKey();
+  const loginCookies = [`apiKey=${clientApiKey}`];
+  if (hasCredential(twoFactorAuthCookie)) {
+    loginCookies.push(`twoFactorAuth=${normalizeTwoFactorAuthCookie(twoFactorAuthCookie!)}`);
+  }
   const headers: Record<string, string> = {
     Authorization: `Basic ${basicAuthToken(username, password)}`,
     "User-Agent": UA,
     Accept: "application/json",
+    Cookie: loginCookies.join("; "),
   };
-  if (hasCredential(twoFactorAuthCookie)) {
-    headers.Cookie = `twoFactorAuth=${normalizeTwoFactorAuthCookie(twoFactorAuthCookie!)}`;
-  }
 
   const res = await fetch(`${API_BASE}/auth/user`, { headers });
 
@@ -225,13 +380,18 @@ async function loginWithCredentials(username: string, password: string): Promise
   }
 
   if (res.status === 401) {
-    const detail =
-      body?.error &&
-      typeof body.error === "object" &&
-      "message" in body.error &&
-      typeof (body.error as { message?: unknown }).message === "string"
-        ? (body.error as { message: string }).message
-        : "invalid credentials";
+    const detail = errorMessageFromBody(body, "invalid credentials");
+    if (isNewLocationLoginError(detail)) {
+      throw new Error(
+        [
+          "VRChat blocked login from GitHub Actions (new location).",
+          "1) Check the email for this VRChat account and click the approval link.",
+          "2) Re-run this workflow within a few minutes.",
+          "3) For daily automation: enable TOTP 2FA on the account, save the manual-entry key as VRCHAT_2FA_SECRET, and use a dedicated bot account.",
+          "Optional: paste the token from the email link into VRCHAT_LOGIN_PLACE_TOKEN and re-run.",
+        ].join(" "),
+      );
+    }
     throw new Error(
       `VRChat login failed (401: ${detail}). Use your VRChat username (not email) and password.`,
     );
@@ -249,53 +409,13 @@ async function loginWithCredentials(username: string, password: string): Promise
   let authCookie = extractAuthCookie(res);
   const rememberedTwoFactor = extractCookieValue(res, "twoFactorAuth");
 
-  if (body?.requiresTwoFactorAuth === true) {
+  if (body && requiresTwoFactorMethods(body).length > 0) {
     if (!authCookie) {
       throw new Error(
         "VRChat login returned a 2FA challenge but no auth cookie. Retry with VRCHAT_2FA_SECRET.",
       );
     }
-
-    const totpSecret = totpSecretFromEnv();
-    if (!hasCredential(totpSecret)) {
-      throw new Error(
-        "VRChat account requires 2FA. Set GitHub secret VRCHAT_2FA_SECRET to the TOTP key from your authenticator setup (the manual entry key, not a one-time code).",
-      );
-    }
-
-    const verifyRes = await fetch(`${API_BASE}/auth/twofactorauth/totp/verify`, {
-      method: "POST",
-      headers: {
-        Cookie: buildCookieHeader(
-          authCookie,
-          twoFactorAuthCookie ?? rememberedTwoFactor ?? undefined,
-        ),
-        "User-Agent": UA,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ code: generateTotp(totpSecret!) }),
-    });
-
-    let verifyBody: Record<string, unknown> | null = null;
-    try {
-      verifyBody = (await verifyRes.json()) as Record<string, unknown>;
-    } catch {
-      verifyBody = null;
-    }
-
-    if (!verifyRes.ok) {
-      const detail =
-        verifyBody?.error &&
-        typeof verifyBody.error === "object" &&
-        "message" in verifyBody.error &&
-        typeof (verifyBody.error as { message?: unknown }).message === "string"
-          ? (verifyBody.error as { message: string }).message
-          : `HTTP ${verifyRes.status}`;
-      throw new Error(`VRChat 2FA verification failed (${detail}). Check VRCHAT_2FA_SECRET.`);
-    }
-
-    authCookie = extractAuthCookie(verifyRes) ?? authCookie;
+    authCookie = await completeTwoFactorLogin(body, authCookie, rememberedTwoFactor);
   }
 
   if (!authCookie) {
@@ -352,16 +472,14 @@ async function vrchatGet(
   params: Record<string, string> = {},
   twoFactorAuthCookie?: string,
 ) {
+  const clientApiKey = await getClientApiKey();
   const url = new URL(`${API_BASE}${path}`);
+  url.searchParams.set("apiKey", clientApiKey);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
   const res = await fetch(url, {
-    headers: {
-      Cookie: buildCookieHeader(authCookie, twoFactorAuthCookie),
-      "User-Agent": UA,
-      Accept: "application/json",
-    },
+    headers: await buildAuthHeaders(authCookie, twoFactorAuthCookie),
   });
   if (!res.ok) {
     throw new Error(`HTTP ${res.status} for ${url.pathname}${url.search}`);
@@ -464,8 +582,9 @@ async function main() {
 
   const { cookie: authCookie, source: authSource } = await resolveAuthCookie();
   const twoFactorAuthCookie = process.env.VRCHAT_TWO_FACTOR_AUTH_COOKIE?.trim();
+  const clientApiKey = await getClientApiKey();
   console.log(
-    `VRChat auth via ${authSource} (cookie length ${authCookie.length}, authcookie_ prefix: ${authCookie.startsWith("authcookie_")})`,
+    `VRChat auth via ${authSource} (cookie length ${authCookie.length}, authcookie_ prefix: ${authCookie.startsWith("authcookie_")}, clientApiKey prefix: ${clientApiKey.slice(0, 8)}...)`,
   );
   await verifyAuthCookie(authCookie, twoFactorAuthCookie);
 
