@@ -47,13 +47,17 @@ jobs:
           VRCHAT_AUTH_COOKIE: ${{ secrets.VRCHAT_AUTH_COOKIE }}
           VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
           VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+          VRCHAT_2FA_SECRET: ${{ secrets.VRCHAT_2FA_SECRET }}
         run: |
-          if [ -n "$VRCHAT_AUTH_COOKIE" ]; then
-            echo "VRChat auth: using VRCHAT_AUTH_COOKIE secret."
-          elif [ -n "$VRCHAT_USERNAME" ] && [ -n "$VRCHAT_PASSWORD" ]; then
-            echo "VRChat auth: using VRCHAT_USERNAME + VRCHAT_PASSWORD secrets."
+          if [ -n "$VRCHAT_USERNAME" ] && [ -n "$VRCHAT_PASSWORD" ]; then
+            echo "VRChat auth: using VRCHAT_USERNAME + VRCHAT_PASSWORD (recommended for CI)."
+            if [ -n "$VRCHAT_2FA_SECRET" ]; then
+              echo "VRChat 2FA: VRCHAT_2FA_SECRET is set."
+            fi
+          elif [ -n "$VRCHAT_AUTH_COOKIE" ]; then
+            echo "VRChat auth: using VRCHAT_AUTH_COOKIE fallback (browser cookies often expire in CI)."
           else
-            echo "::error::Missing VRChat secrets. Add VRCHAT_AUTH_COOKIE (recommended) or VRCHAT_USERNAME + VRCHAT_PASSWORD in repository Settings → Secrets and variables → Actions."
+            echo "::error::Missing VRChat secrets. Add VRCHAT_USERNAME + VRCHAT_PASSWORD (+ VRCHAT_2FA_SECRET if 2FA is enabled) in repository Settings → Secrets and variables → Actions."
             exit 1
           fi
 
@@ -63,6 +67,8 @@ jobs:
           VRCHAT_AUTH_COOKIE: ${{ secrets.VRCHAT_AUTH_COOKIE }}
           VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
           VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+          VRCHAT_2FA_SECRET: ${{ secrets.VRCHAT_2FA_SECRET }}
+          VRCHAT_TWO_FACTOR_AUTH_COOKIE: ${{ secrets.VRCHAT_TWO_FACTOR_AUTH_COOKIE }}
           SORT: ${{ github.event.inputs.sort || 'popularity' }}
           FALLBACK_SORTS: ${{ github.event.inputs.fallback_sorts || 'heat,created,updated' }}
           LIMIT: ${{ github.event.inputs.limit || '10' }}
