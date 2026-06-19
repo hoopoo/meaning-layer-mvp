@@ -53,7 +53,12 @@ jobs:
             echo "VRChat auth: using VRCHAT_USERNAME + VRCHAT_PASSWORD (recommended for CI)."
             if [ -n "$VRCHAT_2FA_SECRET" ]; then
               echo "VRChat 2FA: VRCHAT_2FA_SECRET is set."
+            else
+              echo "VRChat 2FA: VRCHAT_2FA_SECRET is not set (OK if 2FA is disabled on the account)."
             fi
+          elif [ -n "$VRCHAT_USERNAME" ] || [ -n "$VRCHAT_PASSWORD" ]; then
+            echo "::error::VRChat secrets are incomplete. Set both VRCHAT_USERNAME and VRCHAT_PASSWORD."
+            exit 1
           elif [ -n "$VRCHAT_AUTH_COOKIE" ]; then
             echo "VRChat auth: using VRCHAT_AUTH_COOKIE fallback (browser cookies often expire in CI)."
           else

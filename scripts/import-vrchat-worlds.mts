@@ -310,7 +310,20 @@ async function loginWithCredentials(username: string, password: string): Promise
 async function resolveAuthCookie(): Promise<{ cookie: string; source: string }> {
   const username = process.env.VRCHAT_USERNAME?.trim();
   const password = process.env.VRCHAT_PASSWORD;
-  const hasLogin = hasCredential(username) && hasCredential(password);
+  const hasUser = hasCredential(username);
+  const hasPass = hasCredential(password);
+  const hasLogin = hasUser && hasPass;
+
+  if (hasUser && !hasPass) {
+    throw new Error(
+      "VRCHAT_USERNAME is set but VRCHAT_PASSWORD is missing. Add VRCHAT_PASSWORD in GitHub Actions secrets.",
+    );
+  }
+  if (!hasUser && hasPass) {
+    throw new Error(
+      "VRCHAT_PASSWORD is set but VRCHAT_USERNAME is missing. Add VRCHAT_USERNAME in GitHub Actions secrets.",
+    );
+  }
 
   if (hasLogin) {
     return {
