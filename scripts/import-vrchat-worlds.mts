@@ -54,7 +54,7 @@ const LIMIT = Math.max(1, Number(process.env.LIMIT ?? "10") || 10);
 const PAGE_SIZE = Math.min(100, Math.max(LIMIT, Number(process.env.PAGE_SIZE ?? "100") || 100));
 const UA =
   process.env.VRCHAT_USER_AGENT ??
-  "MeaningLayerMVP-importer/1.0 (meaning-layer-mvp; +worlds:import:vrchat)";
+  "MeaningLayerMVP/1.0 (https://github.com/hoopoo/meaning-layer-mvp)";
 
 type VrchatWorld = {
   id: string;
@@ -333,6 +333,10 @@ async function main() {
   );
 
   const authCookie = await resolveAuthCookie();
+  const authSource = hasCredential(process.env.VRCHAT_AUTH_COOKIE) ? "VRCHAT_AUTH_COOKIE" : "username/password login";
+  console.log(
+    `VRChat auth via ${authSource} (cookie length ${authCookie.length}, authcookie_ prefix: ${authCookie.startsWith("authcookie_")})`,
+  );
   await verifyAuthCookie(authCookie);
 
   const existing = await prisma.world.findMany({
